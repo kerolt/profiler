@@ -1,4 +1,5 @@
 #include "blazesym.h"
+#include "profiler.skel.h"
 
 int main(int argc, const char* argv[]) {
     blaze_inspect_elf_src src = {
