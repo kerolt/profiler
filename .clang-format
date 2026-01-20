@@ -1,0 +1,18 @@
+BasedOnStyle: Google
+DerivePointerAlignment: false
+PointerAlignment: Left
+ColumnLimit: 80
+AccessModifierOffset: -4
+UseTab: Never
+IndentWidth: 4
+ContinuationIndentWidth: 4
+# 确保按优先级排序
+SortIncludes: true
+IncludeBlocks: Preserve
+
+# 这会强制如果参数放不下一行，就每个参数（或部分）换行
+BinPackArguments: false
+# 'Align' 会让参数与左括号 '(' 后的第一个字符对齐
+AlignAfterOpenBracket: Align
+# 允许在调用函数时，如果放不下，将所有参数放在新的一行
+AllowAllArgumentsOnNextLine: true
