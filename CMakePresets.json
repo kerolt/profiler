@@ -1,11 +1,16 @@
 {
     "version": 8,
+    "include": [
+        "CMakeUserPresets.json"
+    ],
     "configurePresets": [
         {
             "name": "GCC-15.2.1",
             "displayName": "GCC 15.2.1 x86_64-redhat-linux",
             "description": "正在使用编译器: C = /usr/bin/gcc, CXX = /usr/bin/g++",
             "binaryDir": "${sourceDir}/build/",
+            "inherits": "conan-debug",
+            "toolchainFile": "${sourceDir}/build/Debug/generators/conan_toolchain.cmake",
             "cacheVariables": {
                 "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/install/${presetName}",
                 "CMAKE_C_COMPILER": "/usr/bin/gcc",

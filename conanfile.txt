@@ -1,0 +1,10 @@
+[requires]
+cli11/2.6.0
+spdlog/1.17.0
+
+[generators]
+CMakeDeps
+CMakeToolchain
+
+[layout]
+cmake_layout
