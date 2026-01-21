@@ -1,10 +1,184 @@
-#include "blazesym.h"
+#include <sys/resource.h>
+#include <cerrno>
+#include <csignal>
+#include <cstdint>
+
+#include <bpf/libbpf.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/spdlog.h>
+#include <CLI/CLI.hpp>
+
+#include "event.h"
+#include "perf.h"
 #include "profiler.skel.h"
 
+static auto handle_event_wrapper(void* ctx, void* data, size_t data_sz) -> int {
+    EventHandler* handler = static_cast<EventHandler*>(ctx);
+    return handler->handle(static_cast<const uint8_t*>(data), data_sz);
+}
+
+static volatile bool exiting = false;
+static void sig_handler(int sig) { exiting = true; }
+
+/* ----------------------- 简单封装 profiler_bpf 对象 ----------------------- */
+struct ProfilerSkel {
+    profiler_bpf* obj;
+
+    ProfilerSkel() : obj(nullptr) {
+        obj = profiler_bpf::open_and_load();
+        if (!obj) {
+            spdlog::error("Failed to open and load BPF object");
+        }
+    }
+
+    ~ProfilerSkel() {
+        if (obj) {
+            profiler_bpf__destroy(obj);
+        }
+    }
+
+    // 重载布尔运算符，方便检查对象是否成功创建
+    operator bool() const { return obj != nullptr; }
+
+    // 重载 -> 运算符，方便访问内部的 profiler_bpf 指针
+    auto operator->() -> profiler_bpf* { return obj; }
+    auto operator->() const -> const profiler_bpf* { return obj; }
+};
+
+/* -------------------- RingBuffer 简单封装 ------------------- */
+struct RingBuffer {
+    ring_buffer* rb;
+
+    RingBuffer(int map_fd, ring_buffer_sample_fn sample_cb, void* ctx,
+               const struct ring_buffer_opts* opts) {
+        rb = ring_buffer__new(map_fd, sample_cb, ctx, opts);
+    }
+
+    ~RingBuffer() {
+        if (rb) {
+            ring_buffer__free(rb);
+        }
+    }
+
+    operator bool() const { return rb != nullptr; }
+
+    auto poll(int timeout_ms) -> int {
+        return ring_buffer__poll(rb, timeout_ms);
+    }
+};
+
+/* -------------------------------- 命令行参数结构体
+ * -------------------------------- */
+struct Args {
+    uint64_t freq = 10;
+    uint8_t verbosity = 0;
+    bool sw_event = false;
+    int32_t pid = -1;
+    bool fold_extend = false;
+};
+
+/* --------------------------------- main函数 ---------------------------------
+ */
 int main(int argc, const char* argv[]) {
-    blaze_inspect_elf_src src = {
-        .type_size = sizeof(src),
-        .path = "/tmp/some/dir/test.bin",
-        .debug_syms = true,
-    };
+    CLI::App app{"A simple profiler using eBPF"};
+    Args args;
+
+    // Frequency
+    app.add_option("-f,--freq", args.freq, "Sampling frequency")
+        ->default_val(10);
+
+    // Verbosity (Count 模式)
+    app.add_flag("-v,--verbose",
+                 args.verbosity,
+                 "Increase verbosity (can be supplied multiple times)");
+
+    // Software event
+    app.add_flag("--sw-event",
+                 args.sw_event,
+                 "Use software event for triggering stack trace capture.\n"
+                 "This can be useful for compatibility reasons if hardware "
+                 "event is not available.");
+
+    // PID Filter
+    app.add_option("-p,--pid", args.pid, "Filter by PID (optional)");
+
+    // Output format
+    app.add_flag("-E,--fold-extend",
+                 args.fold_extend,
+                 "Output in extended folded format (timestamp_ns comm pid tid "
+                 "cpu stack1;stack2;...)");
+
+    // 解析命令行参数
+    CLI11_PARSE(app, argc, argv);
+
+    int freq = args.freq < 1 ? 1 : args.freq;
+
+    // 映射日志级别逻辑
+    using Level = spdlog::level::level_enum;
+    Level level;
+    if (args.verbosity == 0) {
+        level = Level::warn;
+    } else if (args.verbosity == 1) {
+        level = Level::info;
+    } else if (args.verbosity == 2) {
+        level = Level::debug;
+    } else {
+        level = Level::trace;
+    }
+
+    auto console = spdlog::stdout_color_mt("console");
+    spdlog::set_default_logger(console);
+    spdlog::set_level(level);
+
+    // 提高内存锁定限制
+    rlimit rl = {RLIM_INFINITY, RLIM_INFINITY};
+    setrlimit(RLIMIT_MEMLOCK, &rl);
+
+    ProfilerSkel obj;
+    if (!obj) {
+        spdlog::error("Fialed to open and load BPF object");
+        return 1;
+    }
+
+    auto perf_fds = init_perf_monitor(args.freq, args.sw_event, args.pid);
+    if (!perf_fds) {
+        spdlog::error("Failed to initialize perf monitor");
+        return 1;
+    }
+
+    // 挂载
+    attach_perf_events(perf_fds.value(), obj->progs.profile);
+
+    EventHandler event_handler(args.fold_extend ? OutputFormat::FoldExtend
+                                                : OutputFormat::Standard);
+    RingBuffer rb{bpf_map__fd(obj->maps.events),
+                  handle_event_wrapper,
+                  &event_handler,
+                  nullptr};
+
+    if (!rb) {
+        spdlog::error("Failed to create ring buffer");
+        return 1;
+    }
+
+    signal(SIGINT, sig_handler);
+    while (!exiting) {
+        int err = rb.poll(100);
+        if (err == -EINTR) {
+            // Interrupted by signal, continue to check exiting flag
+            continue;
+        } else if (err < 0) {
+            spdlog::error("Error polling ring buffer: {}", err);
+            break;
+        }
+    }
+
+    auto r = close_perf_events(perf_fds.value());
+    if (!r) {
+        spdlog::error("Failed to close perf events, error message is: {}",
+                      static_cast<int>(r.error()));
+        return 1;
+    }
+
+    return 0;
 }
