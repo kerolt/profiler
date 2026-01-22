@@ -18,10 +18,12 @@
   - Linux Kernel 5.8+ (已启用 BPF/BTF 支持)
 
 - **构建依赖**:
-  - C++ 编译器 (GCC 10+ 或 Clang 12+)
-  - [CMake](https://cmake.org/) (>= 3.19)
-  - [Conan](https://conan.io/) (包管理器)
-  - [Rust](https://www.rust-lang.org/) (构建 `blazesym` 需要)
+  - **C++23**。本人开发环境为 Fedora 43，使用的编译器版本如下：
+    - gcc: 15.2.1
+    - clang: 21.1.7
+  - [**CMake**](https://cmake.org/) (>= 3.19)
+  - [**Conan**](https://conan.io/) (包管理器)
+  - [**Rust**](https://www.rust-lang.org/) (构建 `blazesym` 需要)
 
 ## 构建
 
@@ -129,3 +131,4 @@ sudo ./build/Release/profiler -f 99 -E > out.folded
 1. [eBPF Tutorial by Example 12](https://eunomia.dev/tutorials/12-profile/) - 使用 eBPF 程序 profile 进行性能分析
 2. [blazesym](https://github.com/libbpf/blazesym) - 用于符号化的 Rust 库和 C API。
 3. [libbpf-bootstrap/profile.c](https://github.com/libbpf/libbpf-bootstrap/blob/master/examples/c/profile.c) - libbpf-bootstrap 中的性能分析示例。
+4. [libbpf-bootstrap/tols/cmake](https://github.com/libbpf/libbpf-bootstrap/tree/master/tools/cmake) - libbpf-bootstrap 的 CMake 构建工具。
