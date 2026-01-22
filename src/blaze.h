@@ -63,7 +63,6 @@ struct Symbolizer {
                         symbolizer_, &kern_src, input.addrs_, input.cnt_);
                 },
                 [&](blaze_symbolize_src_process& proc_src) {
-                    std::println("Symbolizing for pid: {}", proc_src.pid);
                     syms = blaze_symbolize_process_abs_addrs(
                         symbolizer_, &proc_src, input.addrs_, input.cnt_);
                 },

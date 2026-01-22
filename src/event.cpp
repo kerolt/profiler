@@ -157,6 +157,9 @@ void EventHandler::handle_standard(const StacktraceEvent* event) {
 void EventHandler::handle_fold_extend(const StacktraceEvent* event) {
     std::vector<std::string> stack_frames;
 
+    // 为了让火焰图能够按进程聚合，将 "comm-pid" 作为栈底
+    stack_frames.push_back(std::format("{}-{}", event->comm, event->pid));
+
     // 处理用户态
     if (event->ustack_size > 0) {
         auto user_frames = symbolize_stack_to_vec(
@@ -175,15 +178,10 @@ void EventHandler::handle_fold_extend(const StacktraceEvent* event) {
         }
     }
 
-    uint64_t unix_ns = event->timestamp + boot_time_ns;
-    auto temp = stack_frames | std::views::join_with(',');
-    std::println("{} {} {} {} {} {}",
-                 unix_ns,
-                 event->comm,
-                 event->pid,
-                 event->pid,
-                 event->cpu_id,
-                 temp | std::ranges::to<std::string>());
+    auto temp = stack_frames | std::views::join_with(';');
+    // 输出格式：stack;frames 1
+    // FlameGraph 工具期望每行以空格和数字结尾
+    std::println("{} 1", temp | std::ranges::to<std::string>());
 }
 
 void EventHandler::show_stack_trace(const uint64_t* stack, int32_t size,
