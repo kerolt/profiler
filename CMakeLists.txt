@@ -1,8 +1,5 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.19)
 project(profiler-cpp LANGUAGES CXX)
-
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-set (CMAKE_CXX_STANDARD 23)
 
 # 将 cmake 文件夹添加到模块搜索路径
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -30,7 +27,7 @@ add_executable(profiler
 # 链接 blazesym 和生成的 BPF skeleton
 target_link_directories(profiler 
     PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/build"
+    "${CMAKE_CURRENT_BINARY_DIR}"
     src
 )
 target_link_libraries(profiler 
