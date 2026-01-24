@@ -2,7 +2,7 @@
 #define BLAZE_H_
 
 #include <cstdint>
-#include <print>
+#include <format>
 #include <variant>
 
 #include <blazesym.h>
@@ -30,7 +30,7 @@ struct Syms {
 
     // 禁止拷贝，防止双重释放
     Syms(const Syms&) = delete;
-    Syms& operator=(const Syms&) = delete;
+    auto operator=(const Syms&) -> Syms& = delete;
 };
 
 using Source =
@@ -49,7 +49,7 @@ struct Symbolizer {
     ~Symbolizer() { blaze_symbolizer_free(symbolizer_); }
 
     [[nodiscard]]
-    auto symbolize(Source src, const Input& input) -> Result<Syms> {
+    auto symbolize(Source src, const Input& input) const -> Result<Syms> {
         if (!input.addrs_ || input.cnt_ == 0) {
             return Err<>{"Empty input addresses"};
         }
@@ -58,11 +58,11 @@ struct Symbolizer {
 
         std::visit(
             Overloaded{
-                [&](blaze_symbolize_src_kernel& kern_src) {
+                [&](blaze_symbolize_src_kernel& kern_src) -> void {
                     syms = blaze_symbolize_kernel_abs_addrs(
                         symbolizer_, &kern_src, input.addrs_, input.cnt_);
                 },
-                [&](blaze_symbolize_src_process& proc_src) {
+                [&](blaze_symbolize_src_process& proc_src) -> void {
                     syms = blaze_symbolize_process_abs_addrs(
                         symbolizer_, &proc_src, input.addrs_, input.cnt_);
                 },
@@ -81,13 +81,12 @@ inline auto get_symbolize_source(uint32_t pid) -> blaze::Source {
             .type_size = sizeof(src),
         };
         return blaze::Source{src};
-    } else {
-        blaze_symbolize_src_process src{
+    }         blaze_symbolize_src_process src{
             .type_size = sizeof(src),
             .pid = pid,
         };
         return blaze::Source{src};
-    }
+   
 }
 
 }  // namespace blaze

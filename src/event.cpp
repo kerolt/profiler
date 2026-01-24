@@ -21,12 +21,12 @@ using AddrInfo = std::tuple<uint64_t, uint64_t, size_t>;
 
 static void print_frame(const char* name, Option<AddrInfo> addr_info,
                         const blaze_symbolize_code_info* code_info) {
-    std::string code_str = "";
-    if (code_info) {
+    std::string code_str;
+    if (code_info != nullptr) {
         // path
-        if (code_info->dir && code_info->file) {
+        if ((code_info->dir != nullptr) && (code_info->file != nullptr)) {
             code_str = std::format(" {}/{})", code_info->dir, code_info->file);
-        } else if (code_info->file) {
+        } else if (code_info->file != nullptr) {
             code_str = code_info->file;
         }
 
@@ -44,7 +44,7 @@ static void print_frame(const char* name, Option<AddrInfo> addr_info,
         std::println("0x{:0>{}}: {} @ {:#x} + {:#x}{}",
                      input_addr,
                      ADDR_WIDTH,
-                     name ? name : "<unknown>",
+                     (name != nullptr) ? name : "<unknown>",
                      addr,
                      offset,
                      code_str);
@@ -68,7 +68,7 @@ auto EventHandler::get_boot_time_ns() -> uint64_t {
 }
 
 auto EventHandler::symbolize_stack_to_vec(const uint64_t* stack,
-                                          int32_t stack_sz, uint32_t pid)
+                                          uint32_t stack_sz, uint32_t pid)
     -> std::vector<std::string> {
     if (stack_sz <= 0) {
         return {};
@@ -76,16 +76,17 @@ auto EventHandler::symbolize_stack_to_vec(const uint64_t* stack,
 
     blaze::Source src = blaze::get_symbolize_source(pid);
     size_t count = stack_sz / sizeof(uint64_t);
-    auto result = symbolizer_.symbolize(src, blaze::Input{stack, count});
+    auto result = symbolizer_.symbolize(
+        src, blaze::Input{.addrs_ = stack, .cnt_ = count});
 
     if (!result) {
         return {};
     }
 
-    auto syms = result->syms_;
+    const auto* syms = result->syms_;
     std::vector<std::string> vec;
 
-    if (!syms) {
+    if (syms == nullptr) {
         for (size_t i = 0; i < count; ++i) {
             vec.push_back(std::format("0x{:x}", stack[i]));
         }
@@ -93,8 +94,8 @@ auto EventHandler::symbolize_stack_to_vec(const uint64_t* stack,
     }
 
     for (size_t i = 0; i < syms->cnt; ++i) {
-        if (syms->syms[i].name) {
-            vec.push_back(syms->syms[i].name);
+        if (syms->syms[i].name != nullptr) {
+            vec.emplace_back(syms->syms[i].name);
         } else {
             vec.push_back(std::format("0x{:x}", stack[i]));
         }
@@ -111,7 +112,7 @@ auto EventHandler::handle(const uint8_t* data, size_t len) -> int {
         return 1;
     }
 
-    const auto event = reinterpret_cast<const StacktraceEvent*>(data);
+    const auto* const event = reinterpret_cast<const StacktraceEvent*>(data);
 
     if (event->kstack_size <= 0 && event->ustack_size <= 0) {
         return 1;
@@ -184,11 +185,12 @@ void EventHandler::handle_fold_extend(const StacktraceEvent* event) {
     std::println("{} 1", temp | std::ranges::to<std::string>());
 }
 
-void EventHandler::show_stack_trace(const uint64_t* stack, int32_t size,
+void EventHandler::show_stack_trace(const uint64_t* stack, uint32_t size,
                                     uint32_t pid) {
     blaze::Source src = blaze::get_symbolize_source(pid);
     size_t count = static_cast<size_t>(size) / sizeof(uint64_t);  // 栈帧数量
-    auto result = symbolizer_.symbolize(src, blaze::Input{stack, count});
+    auto result = symbolizer_.symbolize(
+        src, blaze::Input{.addrs_ = stack, .cnt_ = count});
 
     if (!result) {
         std::println(stderr,
@@ -197,9 +199,9 @@ void EventHandler::show_stack_trace(const uint64_t* stack, int32_t size,
         return;
     }
 
-    auto syms = result->syms_;
+    const auto* syms = result->syms_;
     for (size_t i = 0; i < count; ++i) {
-        if (i < syms->cnt && syms->syms[i].name) {
+        if (i < syms->cnt && (syms->syms[i].name != nullptr)) {
             print_frame(
                 syms->syms[i].name,
                 Option<AddrInfo>(std::make_tuple(

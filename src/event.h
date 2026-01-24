@@ -3,6 +3,7 @@
 
 #include <sys/sysinfo.h>
 
+#include <cstdint>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -25,7 +26,7 @@ struct StacktraceEvent {
     uint64_t ustack[MAX_STACK_DEPTH];
 };
 
-enum class OutputFormat { Standard, FoldExtend };
+enum class OutputFormat : uint8_t { Standard, FoldExtend };
 
 class EventHandler {
 public:
@@ -37,17 +38,17 @@ public:
 
     auto handle(const uint8_t* data, size_t len) -> int;
 
-    void show_stack_trace(const uint64_t* stack, int32_t size, uint32_t pid);
+    void show_stack_trace(const uint64_t* stack, uint32_t size, uint32_t pid);
 
 private:
     blaze::Symbolizer symbolizer_;
     OutputFormat format;
     uint64_t boot_time_ns;
 
-    auto get_boot_time_ns() -> uint64_t;
+    static auto get_boot_time_ns() -> uint64_t;
 
     // 符号化堆栈并返回字符串向量
-    auto symbolize_stack_to_vec(const uint64_t* stack, int32_t size,
+    auto symbolize_stack_to_vec(const uint64_t* stack, uint32_t stack_sz,
                                 uint32_t pid) -> std::vector<std::string>;
 
     void handle_standard(const StacktraceEvent* event);

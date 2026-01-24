@@ -13,7 +13,7 @@
 #include "profiler.skel.h"
 
 static auto handle_event_wrapper(void* ctx, void* data, size_t data_sz) -> int {
-    EventHandler* handler = static_cast<EventHandler*>(ctx);
+    auto* handler = static_cast<EventHandler*>(ctx);
     return handler->handle(static_cast<const uint8_t*>(data), data_sz);
 }
 
@@ -22,17 +22,17 @@ static void sig_handler(int sig) { exiting = true; }
 
 /* ----------------------- 简单封装 profiler_bpf 对象 ----------------------- */
 struct ProfilerSkel {
-    profiler_bpf* obj;
+    profiler_bpf* obj{nullptr};
 
-    ProfilerSkel() : obj(nullptr) {
+    ProfilerSkel() {
         obj = profiler_bpf::open_and_load();
-        if (!obj) {
+        if (obj == nullptr) {
             spdlog::error("Failed to open and load BPF object");
         }
     }
 
     ~ProfilerSkel() {
-        if (obj) {
+        if (obj != nullptr) {
             profiler_bpf__destroy(obj);
         }
     }
@@ -41,8 +41,7 @@ struct ProfilerSkel {
     operator bool() const { return obj != nullptr; }
 
     // 重载 -> 运算符，方便访问内部的 profiler_bpf 指针
-    auto operator->() -> profiler_bpf* { return obj; }
-    auto operator->() const -> const profiler_bpf* { return obj; }
+    auto operator->() const -> profiler_bpf* { return obj; }
 };
 
 /* -------------------- RingBuffer 简单封装 ------------------- */
@@ -55,20 +54,20 @@ struct RingBuffer {
     }
 
     ~RingBuffer() {
-        if (rb) {
+        if (rb != nullptr) {
             ring_buffer__free(rb);
         }
     }
 
     operator bool() const { return rb != nullptr; }
 
-    auto poll(int timeout_ms) -> int {
+    [[nodiscard]]
+    auto poll(int timeout_ms) const -> int {
         return ring_buffer__poll(rb, timeout_ms);
     }
 };
 
-/* -------------------------------- 命令行参数结构体
- * -------------------------------- */
+/* -------------------------- 命令行参数结构体 -------------------------- */
 struct Args {
     uint64_t freq = 10;
     uint8_t verbosity = 0;
@@ -77,9 +76,8 @@ struct Args {
     bool fold_extend = false;
 };
 
-/* --------------------------------- main函数 ---------------------------------
- */
-int main(int argc, const char* argv[]) {
+/* ---------------------------- main函数 ----------------------------- */
+auto main(int argc, const char* argv[]) -> int {
     CLI::App app{"A simple profiler using eBPF"};
     Args args;
 
@@ -109,9 +107,9 @@ int main(int argc, const char* argv[]) {
                  "cpu stack1;stack2;...)");
 
     // 解析命令行参数
-    CLI11_PARSE(app, argc, argv);
+    CLI11_PARSE(app, argc, argv);  // NOLINT
 
-    int freq = args.freq < 1 ? 1 : args.freq;
+    auto freq = args.freq < 1 ? 1 : args.freq;
 
     // 映射日志级别逻辑
     using Level = spdlog::level::level_enum;
@@ -131,7 +129,7 @@ int main(int argc, const char* argv[]) {
     spdlog::set_level(level);
 
     // 提高内存锁定限制
-    rlimit rl = {RLIM_INFINITY, RLIM_INFINITY};
+    rlimit rl = {.rlim_cur = RLIM_INFINITY, .rlim_max = RLIM_INFINITY};
     setrlimit(RLIMIT_MEMLOCK, &rl);
 
     ProfilerSkel obj;
@@ -140,7 +138,7 @@ int main(int argc, const char* argv[]) {
         return 1;
     }
 
-    auto perf_fds = init_perf_monitor(args.freq, args.sw_event, args.pid);
+    auto perf_fds = init_perf_monitor(freq, args.sw_event, args.pid);
     if (!perf_fds) {
         spdlog::error("Failed to initialize perf monitor");
         return 1;
@@ -167,7 +165,8 @@ int main(int argc, const char* argv[]) {
         if (err == -EINTR) {
             // Interrupted by signal, continue to check exiting flag
             continue;
-        } else if (err < 0) {
+        }
+        if (err < 0) {
             spdlog::error("Error polling ring buffer: {}", err);
             break;
         }

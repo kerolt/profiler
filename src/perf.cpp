@@ -13,8 +13,8 @@ auto perf_event_open(perf_event_attr* hw_event, pid_t pid, int cpu,
     return syscall(SYS_perf_event_open, hw_event, pid, cpu, group_fd, flags);
 }
 
-auto init_perf_monitor(uint64_t freq, bool sw_event, uint32_t pid = -1)
-    -> Result<std::vector<uint32_t>, libbpf_errno> {
+auto init_perf_monitor(uint64_t freq, bool sw_event, pid_t pid = -1)
+    -> Result<std::vector<int>, libbpf_errno> {
     int cpus = libbpf_num_possible_cpus();
     if (cpus < 0) {
         return Err(libbpf_errno::LIBBPF_ERRNO__INTERNAL);
@@ -29,9 +29,9 @@ auto init_perf_monitor(uint64_t freq, bool sw_event, uint32_t pid = -1)
         .freq = 1,            // 标志位：设为 1 表示使用 sample_freq
     };
 
-    std::vector<uint32_t> fds;
+    std::vector<int> fds;
     for (int cpu = 0; cpu < cpus; ++cpu) {
-        int64_t fd = perf_event_open(&attr, pid, cpu, -1, 0);
+        int fd = static_cast<int>(perf_event_open(&attr, pid, cpu, -1, 0));
         if (fd < 0) {
             return Err(libbpf_errno::LIBBPF_ERRNO__INTERNAL);
         }
@@ -41,21 +41,21 @@ auto init_perf_monitor(uint64_t freq, bool sw_event, uint32_t pid = -1)
     return fds;
 }
 
-auto attach_perf_events(const std::vector<uint32_t>& fds, bpf_program* prog)
+auto attach_perf_events(const std::vector<int>& fds, bpf_program* prog)
     -> std::vector<Result<bpf_link*, libbpf_errno>> {
     std::vector<Result<bpf_link*, libbpf_errno>> links;
-    for (const auto& fd : fds) {
-        auto link = bpf_program__attach_perf_event(prog, fd);
-        if (libbpf_get_error(link)) {
-            links.push_back(Err(libbpf_errno::LIBBPF_ERRNO__INTERNAL));
+    for (int fd : fds) {
+        auto* link = bpf_program__attach_perf_event(prog, fd);
+        if (libbpf_get_error(link) != 0) {
+            links.emplace_back(Err(libbpf_errno::LIBBPF_ERRNO__INTERNAL));
         }
 
-        links.push_back(link);
+        links.emplace_back(link);
     }
     return links;
 }
 
-auto close_perf_events(const std::vector<uint32_t>& fds)
+auto close_perf_events(const std::vector<int>& fds)
     -> Result<int, libbpf_errno> {
     for (const auto& fd : fds) {
         if (close(fd) != 0) {
