@@ -1,0 +1,30 @@
+---
+Checks: >
+  -*,
+  readability-*,
+  bugprone-*,
+  modernize-*,
+  performance-*,
+  -readability-identifier-length,
+  -readability-implicit-bool-conversion,
+  -readability-make-member-function-const,
+  -readability-magic-numbers,
+  -modernize-avoid-c-arrays,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-exception-escape
+
+# 具体的参数设置
+CheckOptions:
+  # 现代化转换：强制要求使用 nullptr
+  - key: modernize-use-nullptr.NullMacros
+    value: "NULL"
+  # 现代化转换：允许在 main 等函数中使用非拖尾返回类型
+  - key: modernize-use-trailing-return-type.IgnoreMainFunction
+    value: "true"
+
+# 关键：只扫描自己编写的 src 目录下的头文件
+# 这可以有效过滤掉 build/Debug/profiler.skel.h 带来的 style 警告
+HeaderFilterRegex: "src/.*"
+
+# 警告即错误：检查不通过就停止编译
+WarningsAsErrors: "*"
