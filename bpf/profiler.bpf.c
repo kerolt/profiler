@@ -34,7 +34,8 @@ struct {
 
 SEC("perf_event")
 int profile(void* ctx) {
-    struct stack_trace_event* event = bpf_ringbuf_reserve(&events, sizeof(struct stack_trace_event), 0);
+    struct stack_trace_event* event =
+        bpf_ringbuf_reserve(&events, sizeof(struct stack_trace_event), 0);
     if (!event) {
         return 1;
     }
@@ -52,8 +53,10 @@ int profile(void* ctx) {
     }
 
     // 获取内核栈、用户栈信息
-    event->kstack_sz = bpf_get_stack(ctx, event->kstack, sizeof(event->kstack), 0);
-    event->ustack_sz = bpf_get_stack(ctx, event->ustack, sizeof(event->ustack), BPF_F_USER_STACK);
+    event->kstack_sz =
+        bpf_get_stack(ctx, event->kstack, sizeof(event->kstack), 0);
+    event->ustack_sz = bpf_get_stack(
+        ctx, event->ustack, sizeof(event->ustack), BPF_F_USER_STACK);
 
     bpf_ringbuf_submit(event, 0);
 

@@ -1,2 +1,19 @@
 CompileFlags:
   CompilationDatabase: "build"
+---
+# 针对 BPF 文件的特殊处理
+If:
+  # 匹配所有在 bpf 目录下的文件，或以 .bpf.c 结尾的文件
+  PathMatch: [.*\.bpf\.c, .*/bpf/.*\.c]
+
+CompileFlags:
+  Add:
+    - "-x"
+    - "c" # 强制识别为 C 语言，即使父项目是 C++
+    - "-target"
+    - "bpf" # 告诉 clangd 按照 BPF 目标架构解析
+    - "-std=gnu11" # 使用 C11 标准（BPF 常用的规范）
+    - "-D__BPF_TRACING__"
+  Remove:
+    - "-std=c++*" # 移除可能从 CMake 继承过来的 C++ 标准标志
+    - "-fexceptions"
