@@ -21,6 +21,8 @@
   - **C++23**。本人开发环境为 Fedora 43，使用的编译器版本如下：
     - gcc: 15.2.1
     - clang: 21.1.7
+  - **libbpf-devel**: version 1.6.1
+  - **bpftool**: version 7.6.0
   - [**CMake**](https://cmake.org/) (>= 3.19)
   - [**Conan**](https://conan.io/) (包管理器)
   - [**Rust**](https://www.rust-lang.org/) (构建 `blazesym` 需要)
@@ -32,7 +34,13 @@
    使用 Conan 安装 C++ 依赖：
 
    ```sh
-   cd profiler-cpp
+   cd profiler
+
+   # 初始化并更新 git 子模块 (blazesym)
+   git submodule update --init --recursive
+
+   # 如果是首次安装 Conan，先设置默认配置
+   # conan profile detect
    
    # 安装依赖 (Release 模式)
    conan install . -s build_type=Release --output-folder=. --build=missing

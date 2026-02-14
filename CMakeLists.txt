@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.19)
 project(profiler-cpp LANGUAGES CXX)
 
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
 # --------------------------------- 配置项目工具 -------------------------------- #
 # 将 cmake 文件夹添加到模块搜索路径
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
