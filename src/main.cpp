@@ -3,6 +3,8 @@
 #include <csignal>
 #include <cstdint>
 
+#include <print>
+
 #include <bpf/libbpf.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
@@ -74,6 +76,7 @@ struct Args {
     bool sw_event = false;
     int32_t pid = -1;
     bool fold_extend = false;
+    bool no_symbolize = false;
 };
 
 /* ---------------------------- main函数 ----------------------------- */
@@ -105,6 +108,11 @@ auto main(int argc, const char* argv[]) -> int {
                  args.fold_extend,
                  "Output in extended folded format (timestamp_ns comm pid tid "
                  "cpu stack1;stack2;...)");
+
+    app.add_flag("--no-symbolize",
+                 args.no_symbolize,
+                 "Disable userspace symbolization and per-sample output. "
+                 "Useful for low-overhead collection benchmark.");
 
     // 解析命令行参数
     CLI11_PARSE(app, argc, argv);  // NOLINT
@@ -147,8 +155,10 @@ auto main(int argc, const char* argv[]) -> int {
     // 挂载
     attach_perf_events(perf_fds.value(), obj->progs.profile);
 
-    EventHandler event_handler(args.fold_extend ? OutputFormat::FoldExtend
-                                                : OutputFormat::Standard);
+    EventHandler event_handler(
+        args.fold_extend ? OutputFormat::FoldExtend : OutputFormat::Standard,
+        args.no_symbolize ? ProcessingMode::RawCount
+                          : ProcessingMode::Symbolize);
     RingBuffer rb{bpf_map__fd(obj->maps.events),
                   handle_event_wrapper,
                   &event_handler,
@@ -177,6 +187,10 @@ auto main(int argc, const char* argv[]) -> int {
         spdlog::error("Failed to close perf events, error message is: {}",
                       static_cast<int>(r.error()));
         return 1;
+    }
+
+    if (args.no_symbolize) {
+        std::println("samples={}", event_handler.sample_count());
     }
 
     return 0;

@@ -118,6 +118,12 @@ auto EventHandler::handle(const uint8_t* data, size_t len) -> int {
         return 1;
     }
 
+    sample_count_++;
+
+    if (mode_ == ProcessingMode::RawCount) {
+        return 0;
+    }
+
     if (format == OutputFormat::Standard) {
         handle_standard(event);
     } else {

@@ -41,7 +41,7 @@
 
    # 如果是首次安装 Conan，先设置默认配置
    # conan profile detect
-   
+
    # 安装依赖 (Release 模式)
    conan install . -s build_type=Release --output-folder=. --build=missing
    # 或者 Debug 模式
@@ -83,13 +83,13 @@ sudo ./build/Release/profiler [OPTIONS]
 
 ### 选项
 
-| 选项 | 描述 | 默认值 |
-|--------|-------------|---------|
-| `-f, --freq <N>` | 采样频率 (Hz) | `10` |
-| `-p, --pid <PID>` | 按进程 ID 过滤 (可选) | 监控所有进程 |
-| `--sw-event` | 使用软件事件 (cpu-clock) 代替硬件周期。在虚拟机中很有用。 | 硬件周期 (HW Cycles) |
-| `-E, --fold-extend` | 以适用于火焰图的扩展折叠格式输出 | 标准格式 |
-| `-v, --verbose` | 增加日志详细程度 | Warning |
+| 选项                | 描述                                                      | 默认值               |
+| ------------------- | --------------------------------------------------------- | -------------------- |
+| `-f, --freq <N>`    | 采样频率 (Hz)                                             | `10`                 |
+| `-p, --pid <PID>`   | 按进程 ID 过滤 (可选)                                     | 监控所有进程         |
+| `--sw-event`        | 使用软件事件 (cpu-clock) 代替硬件周期。在虚拟机中很有用。 | 硬件周期 (HW Cycles) |
+| `-E, --fold-extend` | 以适用于火焰图的扩展折叠格式输出                          | 标准格式             |
+| `-v, --verbose`     | 增加日志详细程度                                          | Warning              |
 
 ### 示例
 
@@ -133,6 +133,45 @@ sudo ./build/Release/profiler -f 99 -E > out.folded
 - `bpf/`: eBPF C 代码 (内核侧)。
 - `cmake/`: CMake 辅助模块。
 - `third_party/`: 外部依赖 (blazesym)。
+
+## 与 perf 对比采样开销
+
+仓库内提供了脚本：`scripts/benchmark.sh`，用于在同一份负载上对比 `profiler` 和 `perf` 的采样器开销。
+
+核心对比指标：
+
+- `user_sec + sys_sec`: 采样器自身 CPU 开销（越低越好）
+- `samples`: 采样输出条数（近似采样量）
+
+支持多轮统计（`--runs N`），会额外输出：
+
+- `mean`: 平均值
+- `std`: 标准差
+- `p95`: 95 分位
+
+脚本会自动给出两组比较结果：
+
+- `collect-only`: `profiler` 对比 `perf record`（采集阶段）
+- `end-to-end`: `profiler` 对比 `perf record + perf script/report`（端到端）
+
+默认情况下，脚本会让 `profiler` 使用 `--no-symbolize`（仅采集计数，不做逐样本符号化/输出），用于更公平地比较采集路径开销。
+如需恢复符号化输出，可在脚本中添加 `--profiler-symbolize`。
+
+```sh
+sudo ./scripts/benchmark.sh \
+   --freq 199 \
+   --duration 20 \
+   --runs 5 \
+   --workload "yes > /dev/null" \
+   --outdir ./benchmark_out/repeat \
+   --profiler-symbolize
+```
+
+更多参数可查看：
+
+```sh
+./scripts/benchmark.sh --help
+```
 
 ## 参考
 

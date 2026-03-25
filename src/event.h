@@ -27,22 +27,30 @@ struct StacktraceEvent {
 };
 
 enum class OutputFormat : uint8_t { Standard, FoldExtend };
+enum class ProcessingMode : uint8_t { Symbolize, RawCount };
 
 class EventHandler {
 public:
-    EventHandler(OutputFormat fmt) : format(fmt) {
+    EventHandler(OutputFormat fmt,
+                 ProcessingMode mode = ProcessingMode::Symbolize)
+        : format(fmt), mode_(mode) {
         boot_time_ns = get_boot_time_ns();
     }
 
     ~EventHandler() = default;
 
     auto handle(const uint8_t* data, size_t len) -> int;
+    [[nodiscard]] auto sample_count() const -> uint64_t {
+        return sample_count_;
+    }
 
     void show_stack_trace(const uint64_t* stack, uint32_t size, uint32_t pid);
 
 private:
     blaze::Symbolizer symbolizer_;
     OutputFormat format;
+    ProcessingMode mode_;
+    uint64_t sample_count_{0};
     uint64_t boot_time_ns;
 
     static auto get_boot_time_ns() -> uint64_t;

@@ -3,3 +3,5 @@ build/
 
 vmlinux.h
 CMakeUserPresets.json
+
+benchmark_out/
