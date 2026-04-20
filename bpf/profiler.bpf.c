@@ -21,8 +21,8 @@ struct stack_trace_event {
 
     char comm[TASK_COMM_LEN];
 
-    __s32 kstack_sz;
-    __s32 ustack_sz;
+    __u32 kstack_sz;
+    __u32 ustack_sz;
     stack_trace_t kstack;
     stack_trace_t ustack;
 };
@@ -40,8 +40,8 @@ int profile(void* ctx) {
         return 1;
     }
 
-    int pid = bpf_get_current_pid_tgid() >> 32;
-    int cpu_id = bpf_get_smp_processor_id();
+    __u32 pid = bpf_get_current_pid_tgid() >> 32;
+    __u32 cpu_id = bpf_get_smp_processor_id();
 
     event->pid = pid;
     event->cpu_id = cpu_id;
