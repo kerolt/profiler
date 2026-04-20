@@ -4,4 +4,10 @@ build/
 vmlinux.h
 CMakeUserPresets.json
 
-benchmark_out/
+.codex
+
+__pycache__/
+report/
+
+*.folded
+*.svg

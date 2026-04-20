@@ -1,3 +1,6 @@
 [submodule "third_party/blazesym"]
 	path = third_party/blazesym
 	url = git@github.com:libbpf/blazesym.git
+[submodule "third_party/FlameGraph"]
+	path = third_party/FlameGraph
+	url = https://github.com/brendangregg/FlameGraph.git
