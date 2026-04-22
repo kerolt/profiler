@@ -10,7 +10,6 @@ FetchContent_MakeAvailable(Corrosion)
 # 2. 导入 Rust 项目
 corrosion_import_crate(
     MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/third_party/blazesym/Cargo.toml
-    NO_AUTO_EXE
 )
 
 # 3. 查找必要的系统链接库
