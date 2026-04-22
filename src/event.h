@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include "blaze.h"
 
@@ -43,15 +44,22 @@ public:
     [[nodiscard]] auto sample_count() const -> uint64_t {
         return sample_count_;
     }
+    void flush();
 
     void show_stack_trace(const uint64_t* stack, uint32_t size, uint32_t pid);
 
 private:
+    struct FoldedStack {
+        std::string line;
+        uint64_t count{0};
+    };
+
     blaze::Symbolizer symbolizer_;
     OutputFormat format;
     ProcessingMode mode_;
     uint64_t sample_count_{0};
     uint64_t boot_time_ns;
+    std::unordered_map<std::string, FoldedStack> folded_stacks_;
 
     static auto get_boot_time_ns() -> uint64_t;
 
@@ -62,6 +70,8 @@ private:
     void handle_standard(const StacktraceEvent* event);
 
     void handle_fold_extend(const StacktraceEvent* event);
+
+    static auto folded_key(const StacktraceEvent* event) -> std::string;
 };
 
 #endif /* EVENT_H_ */

@@ -26,10 +26,18 @@ static void sig_handler(int sig) { exiting = true; }
 struct ProfilerSkel {
     profiler_bpf* obj{nullptr};
 
-    ProfilerSkel() {
-        obj = profiler_bpf::open_and_load();
+    explicit ProfilerSkel(uint32_t target_tgid) {
+        obj = profiler_bpf::open();
         if (obj == nullptr) {
-            spdlog::error("Failed to open and load BPF object");
+            spdlog::error("Failed to open BPF object");
+            return;
+        }
+
+        obj->rodata->target_tgid = target_tgid;
+        if (profiler_bpf::load(obj) != 0) {
+            spdlog::error("Failed to load BPF object");
+            profiler_bpf__destroy(obj);
+            obj = nullptr;
         }
     }
 
@@ -142,13 +150,15 @@ auto main(int argc, const char* argv[]) -> int {
         rlimit rl = {.rlim_cur = RLIM_INFINITY, .rlim_max = RLIM_INFINITY};
         setrlimit(RLIMIT_MEMLOCK, &rl);
 
-        ProfilerSkel obj;
+        uint32_t target_tgid = args.pid > 0 ? static_cast<uint32_t>(args.pid) : 0;
+        ProfilerSkel obj{target_tgid};
         if (!obj) {
             spdlog::error("Failed to open and load BPF object");
             return 1;
         }
 
-        auto perf_fds = init_perf_monitor(freq, args.sw_event, args.pid);
+        int32_t perf_pid = target_tgid == 0 ? args.pid : -1;
+        auto perf_fds = init_perf_monitor(freq, args.sw_event, perf_pid);
         if (!perf_fds) {
             spdlog::error("Failed to initialize perf monitor");
             return 1;
@@ -184,6 +194,7 @@ auto main(int argc, const char* argv[]) -> int {
                 break;
             }
         }
+        event_handler.flush();
 
         auto r = close_perf_events(perf_fds.value());
         if (!r) {

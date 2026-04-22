@@ -14,6 +14,8 @@ char LICENSE[] SEC("license") = "Dual BSD/GPL";
 
 typedef __u64 stack_trace_t[MAX_STACK_DEPTH];
 
+const volatile __u32 target_tgid = 0;
+
 struct stack_trace_event {
     __u32 pid;
     __u32 cpu_id;
@@ -34,16 +36,22 @@ struct {
 
 SEC("perf_event")
 int profile(void* ctx) {
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    __u32 tgid = pid_tgid >> 32;
+
+    if (target_tgid != 0 && tgid != target_tgid) {
+        return 0;
+    }
+
     struct stack_trace_event* event =
         bpf_ringbuf_reserve(&events, sizeof(struct stack_trace_event), 0);
     if (!event) {
         return 1;
     }
 
-    __u32 pid = bpf_get_current_pid_tgid() >> 32;
     __u32 cpu_id = bpf_get_smp_processor_id();
 
-    event->pid = pid;
+    event->pid = tgid;
     event->cpu_id = cpu_id;
     event->timestamp = bpf_ktime_get_ns();
 

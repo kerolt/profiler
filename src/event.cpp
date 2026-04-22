@@ -13,14 +13,31 @@
 #include <format>
 #include <print>
 #include <ranges>
+#include <string>
 
 #include "blaze.h"
 #include "utils.h"
 
 using AddrInfo = std::tuple<uint64_t, uint64_t, size_t>;
 
-static void print_frame(const char* name, Option<AddrInfo> addr_info,
-                        const blaze_symbolize_code_info* code_info) {
+namespace {
+auto stack_byte_count(int32_t stack_size) -> size_t {
+    return stack_size > 0 ? static_cast<size_t>(stack_size) : 0;
+}
+
+template <typename T>
+void append_key_part(std::string& key, const T& value) {
+    key.append(reinterpret_cast<const char*>(&value), sizeof(value));
+}
+
+void append_stack_key(std::string& key, const uint64_t* stack,
+                      int32_t stack_size) {
+    size_t bytes = stack_byte_count(stack_size);
+    key.append(reinterpret_cast<const char*>(stack), bytes);
+}
+
+void print_frame(const char* name, Option<AddrInfo> addr_info,
+                 const blaze_symbolize_code_info* code_info) {
     std::string code_str;
     if (code_info != nullptr) {
         // path
@@ -52,6 +69,7 @@ static void print_frame(const char* name, Option<AddrInfo> addr_info,
         std::println("{:>{}} {}{} [inlined]", "", ADDR_WIDTH, name, code_str);
     }
 }
+}  // namespace
 
 auto EventHandler::get_boot_time_ns() -> uint64_t {
     auto now = std::chrono::system_clock::now();
@@ -133,6 +151,17 @@ auto EventHandler::handle(const uint8_t* data, size_t len) -> int {
     return 0;
 }
 
+void EventHandler::flush() {
+    if (format != OutputFormat::FoldExtend ||
+        mode_ == ProcessingMode::RawCount) {
+        return;
+    }
+
+    for (const auto& [_, folded] : folded_stacks_) {
+        std::println("{} {}", folded.line, folded.count);
+    }
+}
+
 void EventHandler::handle_standard(const StacktraceEvent* event) {
     uint64_t unix_ns = event->timestamp + boot_time_ns;
     std::println("[{}.{:09} COMM: {} (pid={}) @ CPU {}]",
@@ -162,6 +191,15 @@ void EventHandler::handle_standard(const StacktraceEvent* event) {
 }
 
 void EventHandler::handle_fold_extend(const StacktraceEvent* event) {
+    // 先检查缓存，如果之前已经见过完全一样的栈
+    // （包括 comm、pid、内核栈和用户栈），就直接把计数加一并返回
+    auto key = folded_key(event);
+    auto cached = folded_stacks_.find(key);
+    if (cached != folded_stacks_.end()) {
+        cached->second.count++;
+        return;
+    }
+
     std::vector<std::string> stack_frames;
 
     // 为了让火焰图能够按进程聚合，将 "comm-pid" 作为栈底
@@ -186,9 +224,29 @@ void EventHandler::handle_fold_extend(const StacktraceEvent* event) {
     }
 
     auto temp = stack_frames | std::views::join_with(';');
-    // 输出格式：stack;frames 1
-    // FlameGraph 工具期望每行以空格和数字结尾
-    std::println("{} 1", temp | std::ranges::to<std::string>());
+    folded_stacks_.emplace(std::move(key),
+                           FoldedStack{
+                               .line = temp | std::ranges::to<std::string>(),
+                               .count = 1,
+                           });
+}
+
+// 生成用于 Folded 格式的 key，包含 comm、pid、内核栈和用户栈的原始数据
+auto EventHandler::folded_key(const StacktraceEvent* event) -> std::string {
+    size_t kstack_bytes = stack_byte_count(event->kstack_size);
+    size_t ustack_bytes = stack_byte_count(event->ustack_size);
+    std::string key;
+    key.reserve(sizeof(event->pid) + TASK_COMM_LEN +
+                sizeof(event->kstack_size) + sizeof(event->ustack_size) +
+                kstack_bytes + ustack_bytes);
+
+    append_key_part(key, event->pid);
+    key.append(event->comm, TASK_COMM_LEN);
+    append_key_part(key, event->kstack_size);
+    append_key_part(key, event->ustack_size);
+    append_stack_key(key, event->kstack, event->kstack_size);
+    append_stack_key(key, event->ustack, event->ustack_size);
+    return key;
 }
 
 void EventHandler::show_stack_trace(const uint64_t* stack, uint32_t size,
