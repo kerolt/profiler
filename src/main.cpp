@@ -1,93 +1,36 @@
 #include <sys/resource.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <cerrno>
 #include <csignal>
 #include <cstdint>
 
-#include <print>
-
 #include <bpf/libbpf.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
-#include <spdlog/spdlog.h>
 #include <CLI/CLI.hpp>
 
+#include "common.h"
 #include "event.h"
 #include "perf.h"
-#include "profiler.skel.h"
 
-static auto handle_event_wrapper(void* ctx, void* data, size_t data_sz) -> int {
+auto handle_event_wrapper(void* ctx, void* data, size_t data_sz) -> int {
     auto* handler = static_cast<EventHandler*>(ctx);
     return handler->handle(static_cast<const uint8_t*>(data), data_sz);
 }
 
-static volatile bool exiting = false;
-static void sig_handler(int sig) { exiting = true; }
+volatile bool exiting = false;
+void sig_handler(int sig) { exiting = true; }
 
-/* ----------------------- 简单封装 profiler_bpf 对象 ----------------------- */
-struct ProfilerSkel {
-    profiler_bpf* obj{nullptr};
-
-    explicit ProfilerSkel(uint32_t target_tgid) {
-        obj = profiler_bpf::open();
-        if (obj == nullptr) {
-            spdlog::error("Failed to open BPF object");
-            return;
-        }
-
-        obj->rodata->target_tgid = target_tgid;
-        if (profiler_bpf::load(obj) != 0) {
-            spdlog::error("Failed to load BPF object");
-            profiler_bpf__destroy(obj);
-            obj = nullptr;
-        }
-    }
-
-    ~ProfilerSkel() {
-        if (obj != nullptr) {
-            profiler_bpf__destroy(obj);
-        }
-    }
-
-    // 重载布尔运算符，方便检查对象是否成功创建
-    operator bool() const { return obj != nullptr; }
-
-    // 重载 -> 运算符，方便访问内部的 profiler_bpf 指针
-    auto operator->() const -> profiler_bpf* { return obj; }
-};
-
-/* -------------------- RingBuffer 简单封装 ------------------- */
-struct RingBuffer {
-    ring_buffer* rb;
-
-    RingBuffer(int map_fd, ring_buffer_sample_fn sample_cb, void* ctx,
-               const struct ring_buffer_opts* opts) {
-        rb = ring_buffer__new(map_fd, sample_cb, ctx, opts);
-    }
-
-    ~RingBuffer() {
-        if (rb != nullptr) {
-            ring_buffer__free(rb);
-        }
-    }
-
-    operator bool() const { return rb != nullptr; }
-
-    [[nodiscard]]
-    auto poll(int timeout_ms) const -> int {
-        return ring_buffer__poll(rb, timeout_ms);
-    }
-};
-
-/* -------------------------- 命令行参数结构体 -------------------------- */
 struct Args {
     uint64_t freq = 10;
     uint8_t verbosity = 0;
     bool sw_event = false;
     int32_t pid = -1;
+    std::string filter = "session";
     bool fold_extend = false;
     bool no_symbolize = false;
 };
 
-/* ---------------------------- main函数 ----------------------------- */
 auto main(int argc, const char* argv[]) -> int {
     try {
         CLI::App app{"A simple profiler using eBPF"};
@@ -111,6 +54,10 @@ auto main(int argc, const char* argv[]) -> int {
 
         // PID Filter
         app.add_option("-p,--pid", args.pid, "Filter by PID (optional)");
+        app.add_option("--filter",
+                       args.filter,
+                       "Filter scope for --pid: tgid, pgrp, session, cgroup")
+            ->default_val("session");
 
         // Output format
         app.add_flag(
@@ -150,14 +97,15 @@ auto main(int argc, const char* argv[]) -> int {
         rlimit rl = {.rlim_cur = RLIM_INFINITY, .rlim_max = RLIM_INFINITY};
         setrlimit(RLIMIT_MEMLOCK, &rl);
 
-        uint32_t target_tgid = args.pid > 0 ? static_cast<uint32_t>(args.pid) : 0;
-        ProfilerSkel obj{target_tgid};
+        FilterMode filter_mode = parse_filter_mode(args.filter);
+        uint64_t target_id = resolve_target_id(args.pid, filter_mode);
+        ProfilerSkel obj{target_id, filter_mode};
         if (!obj) {
             spdlog::error("Failed to open and load BPF object");
             return 1;
         }
 
-        int32_t perf_pid = target_tgid == 0 ? args.pid : -1;
+        int32_t perf_pid = target_id == 0 ? args.pid : -1;
         auto perf_fds = init_perf_monitor(freq, args.sw_event, perf_pid);
         if (!perf_fds) {
             spdlog::error("Failed to initialize perf monitor");
@@ -204,7 +152,7 @@ auto main(int argc, const char* argv[]) -> int {
         }
 
         if (args.no_symbolize) {
-            std::println("samples={}", event_handler.sample_count());
+            spdlog::info("samples={}", event_handler.sample_count());
         }
 
         return 0;
