@@ -11,3 +11,14 @@ report/
 
 *.folded
 *.svg
+
+*.o
+*.d
+*.a
+*.so
+*.lib
+*.dll
+*.out
+*.exe
+
+target/
