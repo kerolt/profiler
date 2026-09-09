@@ -1,6 +1,11 @@
-# Profiler C++
+# Profiler
 
-一个基于 eBPF、perf events 和 C++ 的简易 Linux 性能分析器。该工具可以捕获堆栈跟踪（内核态和用户态），并使用 [blazesym](https://github.com/libbpf/blazesym) 提供符号化支持。
+一个基于 eBPF、perf events 和 Rust 的 Linux 性能分析器。内核态 eBPF 程序保留使用 C 编写，用户态程序使用 Rust、libbpf-rs 和 blazesym Rust API，负责采集、符号化和输出堆栈跟踪。
+
+当前仓库基准脚本 `scripts/benchmark.py` 的实测结果显示：
+
+- 在 `collect-only` 口径（仅采集）下，当前实现开销高于 `perf record`。
+- 在 `end-to-end` 口径（采集+后处理）下，当前实现总开销低于 `perf` 工作流。
 
 ## 特性
 
@@ -12,131 +17,97 @@
 
 ## 前置条件
 
-在通过 CMake 和 Conan 构建之前，请确保已安装以下内容：
+在通过 Cargo 构建之前，请确保已安装以下内容：
 
 - **运行依赖**:
-  - Linux Kernel 5.8+ (已启用 BPF/BTF 支持)
+  - Linux Kernel 5.8+，并启用 BPF/BTF 支持
+  - 运行采样所需的 root 权限或 CAP_BPF、CAP_PERFMON 等能力
 
 - **构建依赖**:
-  - **C++23**。本人开发环境为 Fedora 43，使用的编译器版本如下：
-    - gcc: 15.2.1
-    - clang: 21.1.7
-  - **libbpf-devel**: version 1.6.1
-  - **bpftool**: version 7.6.0
-  - [**CMake**](https://cmake.org/) (>= 3.19)
-  - [**Conan**](https://conan.io/) (包管理器)
-  - [**Rust**](https://www.rust-lang.org/) (构建 `blazesym` 需要)
+  - [**Rust**](https://www.rust-lang.org/) 和 Cargo
+  - **clang**，用于编译 C eBPF 程序
+  - **bpftool**，用于从运行中的内核 BTF 生成 `vmlinux.h`
+  - libelf、zlib 等 libbpf 系统依赖
 
 ## 构建
 
-1. **安装依赖**
+项目使用 Cargo 构建 Rust 用户态程序，并在 `build.rs` 中调用 `libbpf-cargo` 编译现有的 C eBPF 程序、生成 BPF skeleton 和 Rust 类型绑定。
 
-   使用 Conan 安装 C++ 依赖：
+```sh
+# 构建 Debug 版本
+cargo build
 
-   ```sh
-   cd profiler
+# 构建 Release 版本
+cargo build --release
+```
 
-   # 初始化并更新 git 子模块 (blazesym)
-   git submodule update --init --recursive
-
-   # 如果是首次安装 Conan，先设置默认配置
-   # conan profile detect
-
-   # 安装依赖 (Release 模式)
-   conan install . -s build_type=Release --output-folder=. --build=missing
-   # 或者 Debug 模式
-   # conan install . -s build_type=Debug --output-folder=. --build=missing
-   ```
-
-2. **使用 CMake 配置**
-
-   使用 Conan 生成的预设 (presets)：
-
-   ```sh
-   # Release
-   cmake --preset release
-   # 或者 Debug
-   # cmake --preset debug
-   ```
-
-3. **构建 Blazesym (C API)**
-
-   这一步编译 Rust 库可能需要一点时间：
-
-   ```sh
-   cmake --build build/Release --target _cargo-build_blazesym_c
-   ```
-
-4. **构建 Profiler**
-
-   ```sh
-   cmake --build build/Release --target profiler
-   ```
+构建过程会通过 `bpftool btf dump` 从 `/sys/kernel/btf/vmlinux` 生成 `vmlinux.h`，因此构建主机需要提供运行中内核的 BTF 信息。
 
 ## 使用方法
 
-Profiler 需要 `root` 权限 (CAP_PERFMON / CAP_SYS_ADMIN) 来加载 BPF 程序。
+Profiler 需要 root 权限或相应的 BPF/perf 能力来加载程序。
 
 ```sh
-sudo ./build/Release/profiler [OPTIONS]
+sudo ./target/release/profiler [OPTIONS]
 ```
 
 ### 选项
 
-| 选项                | 描述                                                      | 默认值               |
-| ------------------- | --------------------------------------------------------- | -------------------- |
-| `-f, --freq <N>`    | 采样频率 (Hz)                                             | `10`                 |
-| `-p, --pid <PID>`   | 按进程 ID 过滤 (可选)                                     | 监控所有进程         |
-| `--sw-event`        | 使用软件事件 (cpu-clock) 代替硬件周期。在虚拟机中很有用。 | 硬件周期 (HW Cycles) |
-| `-E, --fold-extend` | 以适用于火焰图的扩展折叠格式输出                          | 标准格式             |
-| `-v, --verbose`     | 增加日志详细程度                                          | Warning              |
+| 选项                | 描述                                               | 默认值       |
+| ------------------- | -------------------------------------------------- | ------------ |
+| `-f, --freq <N>`    | 采样频率 (Hz)                                      | `10`         |
+| `-p, --pid <PID>`   | 按进程 ID 过滤                                     | 监控所有进程 |
+| `--filter <MODE>`   | `tgid`、`pgrp`、`session` 或 `cgroup`              | `session`    |
+| `--sw-event`        | 使用软件事件 `cpu-clock` 代替硬件周期             | 硬件周期     |
+| `-E, --fold-extend` | 输出适用于 FlameGraph 的折叠格式                  | 标准格式     |
+| `--no-symbolize`    | 禁用符号化，仅统计样本数量                        | 启用符号化   |
+| `-v, --verbose`     | 增加日志详细程度，可重复使用                      | Warning      |
 
 ### 示例
 
 **1. 基本全系统分析**
-以 49 Hz 采样：
 
 ```sh
-sudo ./build/Release/profiler -f 49
+sudo ./target/release/profiler -f 49
 ```
 
 **2. 分析特定进程**
-分析 PID 12345：
 
 ```sh
-sudo ./build/Release/profiler -p 12345
+sudo ./target/release/profiler -p 12345 --filter tgid
 ```
 
-**3. 使用软件事件 (例如在虚拟机中)**
-如果硬件计数器不可用：
+**3. 使用软件事件**
 
 ```sh
-sudo ./build/Release/profiler --sw-event
+sudo ./target/release/profiler --sw-event
 ```
 
-**4. 生成火焰图 (FlameGraph)**
-
-你可以将输出直接通过管道传输给 `flamegraph.pl` (来自 Brendan Gregg 的工具集)：
+**4. 仅采集样本数量**
 
 ```sh
-# 生成数据
-sudo ./build/Release/profiler -f 99 -E > out.folded
-# (按 Ctrl+C 停止)
+sudo timeout --signal=INT 30s ./target/release/profiler --sw-event --no-symbolize -f 99 -v
+```
 
-# 生成 SVG
-./FlameGraph/flamegraph.pl out.folded > profile.svg
+**5. 生成火焰图 (FlameGraph)**
+
+仓库通过 git submodule 引入 Brendan Gregg 的 [FlameGraph](https://github.com/brendangregg/FlameGraph)，路径为 `third_party/FlameGraph`。
+
+```sh
+sudo ./target/release/profiler -f 99 -E > out.folded
+./third_party/FlameGraph/flamegraph.pl out.folded > profile.svg
 ```
 
 ## 项目结构
 
-- `src/`: 用户态代理的 C++ 源代码。
-- `bpf/`: eBPF C 代码 (内核侧)。
-- `cmake/`: CMake 辅助模块。
-- `third_party/`: 外部依赖 (blazesym)。
+- `src/`: Rust 用户态程序，包括参数解析、perf event、事件处理和符号化。
+- `bpf/`: C eBPF 程序，使用 libbpf-cargo 编译。
+- `build.rs`: 生成 `vmlinux.h` 并生成 Rust BPF skeleton。
+- `third_party/FlameGraph/`: FlameGraph 工具。
 
 ## 与 perf 对比采样开销
 
-仓库内提供了脚本：`scripts/benchmark.sh`，用于在同一份负载上对比 `profiler` 和 `perf` 的采样器开销。
+仓库内提供了脚本：`scripts/benchmark.py`，用于在同一份负载上对比 `profiler` 和 `perf` 的采样器开销。
 
 核心对比指标：
 
@@ -154,11 +125,37 @@ sudo ./build/Release/profiler -f 99 -E > out.folded
 - `collect-only`: `profiler` 对比 `perf record`（采集阶段）
 - `end-to-end`: `profiler` 对比 `perf record + perf script/report`（端到端）
 
-默认情况下，脚本会让 `profiler` 使用 `--no-symbolize`（仅采集计数，不做逐样本符号化/输出），用于更公平地比较采集路径开销。
-如需恢复符号化输出，可在脚本中添加 `--profiler-symbolize`。
+默认不开 `--profiler-symbolize` 时，`profiler` 会使用 `--no-symbolize`，只统计样本数量，不做逐样本符号化和文本输出；此时 `collect-only` 可近似用于比较 `profiler` 与 `perf record` 的采集路径开销。
+
+开启 `--profiler-symbolize` 后，`profiler` 会在采集过程中同步完成符号化和文本输出，因此 `collect-only` 中的 `profiler` 不再是纯采集口径，不适合直接对比 `perf record`。这种情况下应主要参考 `end-to-end`，即 `profiler` 对比 `perf record + perf script/report` 的完整流程开销。
+
+### 一组真实 bench 结果（示例）
+
+测试参数：`freq=199`、`duration=20s`、`runs=5`、`workload="yes > /dev/null"`。
+
+- `collect-only`:
+  - `profiler cpu_mean = 0.510s`
+  - `perf cpu_mean = 0.344s`
+  - `cpu_overhead_improvement_vs_perf = -48.26%`
+- `end-to-end`:
+  - `profiler cpu_mean = 0.510s`
+  - `perf cpu_mean = 0.732s`
+  - `cpu_overhead_improvement_vs_perf = 30.33%`
+
+解读：仅看采集路径时当前实现不占优；看完整分析流程时当前实现总开销更低。
+
+如需恢复符号化输出，可在脚本中添加 `--profiler-symbolize`。脚本会在该模式下打印提示，提醒 `collect-only` 中的 `profiler` 包含符号化和输出开销。
+
+`--outdir` 表示输出根目录。每次测试会在该目录下新建一个时间戳子目录，例如：
+
+```text
+report/20260420_104922/
+```
+
+该目录内会包含每轮的 profiler/perf 输出、时间统计、样本统计，以及 `benchmark_config.json` 参数快照。
 
 ```sh
-sudo ./scripts/benchmark.sh \
+sudo ./scripts/benchmark.py \
    --freq 199 \
    --duration 20 \
    --runs 5 \
@@ -170,12 +167,13 @@ sudo ./scripts/benchmark.sh \
 更多参数可查看：
 
 ```sh
-./scripts/benchmark.sh --help
+./scripts/benchmark.py --help
 ```
 
 ## 参考
 
 1. [eBPF Tutorial by Example 12](https://eunomia.dev/tutorials/12-profile/) - 使用 eBPF 程序 profile 进行性能分析
-2. [blazesym](https://github.com/libbpf/blazesym) - 用于符号化的 Rust 库和 C API。
-3. [libbpf-bootstrap/profile.c](https://github.com/libbpf/libbpf-bootstrap/blob/master/examples/c/profile.c) - libbpf-bootstrap 中的性能分析示例。
-4. [libbpf-bootstrap/tols/cmake](https://github.com/libbpf/libbpf-bootstrap/tree/master/tools/cmake) - libbpf-bootstrap 的 CMake 构建工具。
+2. [blazesym](https://github.com/libbpf/blazesym) - 用于符号化的 Rust 库。
+3. [libbpf-rs](https://github.com/libbpf/libbpf-rs) - libbpf 的 Rust 封装。
+4. [FlameGraph](https://github.com/brendangregg/FlameGraph) - 用于把折叠栈数据生成火焰图 SVG。
+4. [libbpf-bootstrap/profile.c](https://github.com/libbpf/libbpf-bootstrap/blob/master/examples/c/profile.c) - libbpf-bootstrap 中的性能分析示例。

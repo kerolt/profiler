@@ -47,7 +47,7 @@ def parse_args() -> argparse.Namespace:
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--profiler-bin", default=Path("./build/Release/profiler"), type=Path, help="profiler 可执行文件路径")
+    parser.add_argument("--profiler-bin", default=Path("./target/release/profiler"), type=Path, help="profiler 可执行文件路径")
     parser.add_argument("--freq", default=99, type=positive_int, metavar="hz", help="采样频率")
     parser.add_argument("--duration", default=15, type=positive_int, metavar="sec", help="每次采样时长，单位秒")
     parser.add_argument("--runs", default=1, type=positive_int, metavar="N", help="重复运行轮数")
