@@ -6,8 +6,9 @@
             "displayName": "Profiler Debug 构建",
             "description": "正在使用编译器: C = /usr/bin/gcc, CXX = /usr/bin/g++",
             "binaryDir": "${sourceDir}/build/Debug",
-            "toolchainFile": "${sourceDir}/build/Debug/generators/conan_toolchain.cmake",
+            "generator": "Ninja",
             "cacheVariables": {
+                "CMAKE_PREFIX_PATH": "$env{CONDA_PREFIX}",
                 "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/install/${presetName}",
                 "CMAKE_C_COMPILER": "/usr/bin/gcc",
                 "CMAKE_CXX_COMPILER": "/usr/bin/g++",
@@ -23,8 +24,9 @@
             "displayName": "Profiler Release 构建",
             "description": "正在使用编译器: C = /usr/bin/gcc, CXX = /usr/bin/g++",
             "binaryDir": "${sourceDir}/build/Release",
-            "toolchainFile": "${sourceDir}/build/Release/generators/conan_toolchain.cmake",
+            "generator": "Ninja",
             "cacheVariables": {
+                "CMAKE_PREFIX_PATH": "$env{CONDA_PREFIX}",
                 "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/install/${presetName}",
                 "CMAKE_C_COMPILER": "/usr/bin/gcc",
                 "CMAKE_CXX_COMPILER": "/usr/bin/g++",

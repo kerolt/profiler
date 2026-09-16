@@ -1,0 +1,38 @@
+[workspace]
+channels = ["conda-forge"]
+name = "profiler"
+platforms = ["linux-64"]
+
+[dependencies]
+# 保持原有 C++ 库版本，具体包构建及传递依赖由 pixi.lock 固定。
+cli11 = "==2.6.0"
+cmake = ">=3.28,<5"
+ninja = ">=1.12,<2"
+spdlog = "==1.17.0"
+# 使用系统 GCC 15/16 编译，环境内的运行库需兼容 GCC 16 生成的代码。
+libstdcxx = ">=16,<17"
+
+[tasks]
+configure = { cmd = "cmake --preset release", description = "配置 Release 构建" }
+# blazesym 是导入的静态库，必须先生成 Rust C API 库，再链接 profiler。
+build-blazesym = { cmd = "cmake --build build/Release --target _cargo-build_blazesym_c", depends-on = [
+  "configure",
+], description = "构建 Release blazesym C API" }
+# Release 构建，默认构建目标。
+build = { cmd = "cmake --build build/Release --target profiler", depends-on = [
+  "build-blazesym",
+], description = "构建 Release profiler" }
+
+# Debug 构建
+configure-debug = { cmd = "cmake --preset debug", description = "配置 Debug 构建" }
+build-blazesym-debug = { cmd = "cmake --build build/Debug --target _cargo-build_blazesym_c", depends-on = [
+  "configure-debug",
+], description = "构建 Debug blazesym C API" }
+build-debug = { cmd = "cmake --build build/Debug --target profiler", depends-on = [
+  "build-blazesym-debug",
+], description = "构建 Debug profiler" }
+
+# --help 在加载 BPF 程序之前退出，不需要 root 权限
+smoke = { cmd = "./build/Release/profiler --help", depends-on = [
+  "build",
+], description = "验证 Release 可执行文件可以启动" }

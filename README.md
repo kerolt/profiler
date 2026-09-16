@@ -12,66 +12,76 @@
 
 ## 前置条件
 
-在通过 CMake 和 Conan 构建之前，请确保已安装以下内容：
+当前 Pixi 环境支持 Linux x86_64。请先准备以下宿主机依赖：
 
-- **运行依赖**:
-  - Linux Kernel 5.8+ (已启用 BPF/BTF 支持)
+- **运行依赖**：Linux Kernel 5.8+，已启用 BPF/BTF 支持。
+- **构建依赖**：
+  - [**Pixi**](https://pixi.sh/latest/installation/)：管理 C++ 库、构建工具和任务。
+  - **GCC/G++ 15 或 16**：支持 C++23，预设使用 `/usr/bin/gcc` 和 `/usr/bin/g++`。
+  - **Clang**：需要包含 BPF 后端，用于编译 `bpf/profiler.bpf.c`。
+  - **libbpf、libelf、zlib 开发包和 bpftool**：由系统包管理器提供，例如 Fedora 的 `libbpf-devel`、`elfutils-libelf-devel`、`zlib-devel`、`bpftool`。
+  - **Git、Rust 和 Cargo**：用于获取 Corrosion 和构建 `blazesym`。
 
-- **构建依赖**:
-  - **C++23**。本人开发环境为 Fedora 43，使用的编译器版本如下：
-    - gcc: 15.2.1
-    - clang: 21.1.7
-  - **libbpf-devel**: version 1.6.1
-  - **bpftool**: version 7.6.0
-  - [**CMake**](https://cmake.org/) (>= 3.19)
-  - [**Conan**](https://conan.io/) (包管理器)
-  - [**Rust**](https://www.rust-lang.org/) (构建 `blazesym` 需要)
+Pixi 安装 CMake（>= 3.28）、Ninja、CLI11、spdlog 及其传递依赖。`pixi.lock` 固定这些包的具体版本和构建；系统编译器、内核以及 Rust 工具链仍由宿主机提供。环境中的 C++ 运行库使用 GCC 16 系列，兼容上述系统编译器。
 
 ## 构建
 
-1. **安装依赖**
-
-   使用 Conan 安装 C++ 依赖：
+1. **准备依赖**
 
    ```sh
    cd profiler
-
-   # 初始化并更新 git 子模块 (blazesym)
    git submodule update --init --recursive
-
-   # 如果是首次安装 Conan，先设置默认配置
-   # conan profile detect
-
-   # 安装依赖 (Release 模式)
-   conan install . -s build_type=Release --output-folder=. --build=missing
-   # 或者 Debug 模式
-   # conan install . -s build_type=Debug --output-folder=. --build=missing
+   pixi install --locked
    ```
 
-2. **使用 CMake 配置**
-
-   使用 Conan 生成的预设 (presets)：
+2. **构建 Release 或 Debug**
 
    ```sh
-   # Release
-   cmake --preset release
-   # 或者 Debug
-   # cmake --preset debug
+   # 默认使用 Release
+   pixi run --locked build
+
+   # 或者构建 Debug
+   pixi run --locked build-debug
    ```
 
-3. **构建 Blazesym (C API)**
+   两个任务都使用 Ninja 生成器，按顺序配置 CMake、构建 blazesym C API，再编译和链接 profiler，分别输出到 `build/Release/` 和 `build/Debug/`。
 
-   这一步编译 Rust 库可能需要一点时间：
+   Debug 预设保留原有静态检查开关；系统安装了 clang-tidy 时，现有 `-fix` 配置可能修改源码，请注意检查工作区差异。
+
+3. **单独配置和验证**
 
    ```sh
-   cmake --build build/Release --target _cargo-build_blazesym_c
+   pixi run --locked configure
+   pixi run --locked configure-debug
+
+   # 构建 Release 并检查 --help，无需 root 权限
+   pixi run --locked smoke
    ```
 
-4. **构建 Profiler**
+   CMake 预设通过 `CONDA_PREFIX` 查找 Pixi 环境中的库，因此配置和构建应在 `pixi run` 或 `pixi shell` 中执行。
 
-   ```sh
-   cmake --build build/Release --target profiler
-   ```
+   配置成功后，`build/compile_commands.json` 会自动链接到最近配置的构建目录，`.clangd` 无需调整。
+
+### 切换已有构建目录
+
+如果已有 Conan 构建目录，先移除仅由 Conan 自动生成的 `CMakeUserPresets.json`；若其中包含自己的配置，请保留自定义部分并移除 Conan 的 `include`。
+
+预设统一使用 Ninja。从 Conan 或 Unix Makefiles 构建切换时，需要重新生成 CMake 缓存，避免沿用旧工具链、依赖路径或生成器。Corrosion 的 FetchContent 子构建有独立缓存，需要先一并切换：
+
+```sh
+# 仅重置已有子构建的配置，保留下载的 Corrosion 源码。
+for mode in Release Debug; do
+  subbuild="build/$mode/_deps/corrosion-subbuild"
+  if [ -f "$subbuild/CMakeLists.txt" ]; then
+    pixi run --locked cmake --fresh -S "$subbuild" -B "$subbuild" -G Ninja
+  fi
+done
+
+pixi run --locked cmake --fresh --preset release
+pixi run --locked cmake --fresh --preset debug
+```
+
+这只会重建对应目录的 CMake 配置，不需要删除整个 `build/` 目录。运行 profiler 时仍需要保留 `.pixi/` 环境，供动态链接器加载其中的 C++ 库。
 
 ## 使用方法
 

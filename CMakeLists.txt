@@ -38,8 +38,9 @@ include(SetupBlazesym)
 # 引入 eBPF 配置
 find_package(BpfObject REQUIRED)
 
-find_package(CLI11 REQUIRED)
-find_package(spdlog REQUIRED)
+# 通过预设中的 CMAKE_PREFIX_PATH 查找 Pixi 环境提供的包配置。
+find_package(CLI11 CONFIG REQUIRED)
+find_package(spdlog CONFIG REQUIRED)
 
 # ------------------------------- 构建目标 ------------------------------- #
 # 编译 BPF 对象并生成 profiler_skel
@@ -64,3 +65,15 @@ target_link_libraries(profiler
     CLI11::CLI11
     spdlog::spdlog
 )
+
+# 为 clangd 提供固定路径，链接指向最近一次配置的构建目录。
+if(CMAKE_EXPORT_COMPILE_COMMANDS AND CMAKE_GENERATOR MATCHES "Makefiles|Ninja")
+    set(COMPILE_COMMANDS_FILE "${CMAKE_BINARY_DIR}/compile_commands.json")
+    set(COMPILE_COMMANDS_LINK "${PROJECT_SOURCE_DIR}/build/compile_commands.json")
+
+    # 直接在 build 中构建时使用原文件，避免创建指向自身的链接。
+    if(NOT "${COMPILE_COMMANDS_FILE}" STREQUAL "${COMPILE_COMMANDS_LINK}")
+        file(MAKE_DIRECTORY "${PROJECT_SOURCE_DIR}/build")
+        file(CREATE_LINK "${COMPILE_COMMANDS_FILE}" "${COMPILE_COMMANDS_LINK}" SYMBOLIC)
+    endif()
+endif()
